@@ -1,0 +1,167 @@
+### import libraries
+import pandas as pd
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+%matplotlib inline
+import warnings
+warnings.filterwarnings('ignore')
+from sklearn.cluster import KMeans
+from sklearn.model_selection import train_test_split
+from imblearn.over_sampling import SMOTE
+from sklearn.model_selection import cross_val_score
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.metrics import roc_auc_score, roc_curve, confusion_matrix, classification_report
+
+
+
+df.info()
+
+print(df.isnull().sum())
+
+import seaborn as sns
+import matplotlib.pyplot as plt 
+%matplotlib inline
+import warnings
+warnings.filterwarnings('ignore')
+
+df_corr = df[['satisfaction_level', 'last_evaluation','number_project','average_montly_hours','time_spend_company','Work_accident','left','promotion_last_5years']]
+df_corr
+
+
+plt.figure(figsize=(8,5))
+sns.heatmap(df_corr.corr(),annot=True,cmap='coolwarm')
+
+sns.histplot(df['satisfaction_level'], kde=True,bins=15)
+plt.title('Distribution of Employee Satisfaction')
+plt.show()
+
+sns.histplot(df['average_montly_hours'], kde=True,bins=17)
+plt.title('Distribution of Employee Average Monthly Hours')
+plt.show()
+
+import seaborn as sns
+import matplotlib.pyplot as plt
+plt.figure(figsize=(8, 5))
+sns.countplot(x='number_project', hue='left', data=df, palette='Set2')
+plt.title('Employee Project Count by Turnover')
+plt.xlabel('Number of Projects')
+plt.ylabel('Number of Employees')
+plt.legend(title='Left', loc='upper right', labels=['Stayed', 'Left'])
+plt.show()
+
+from sklearn.cluster import KMeans
+df_left = df[df['left'] == 1]
+X = df_left[['satisfaction_level', 'last_evaluation']]
+X.isnull().sum()
+
+
+kmeans = KMeans(n_clusters=3, random_state=0)
+df_left['cluster'] = kmeans.fit_predict(X)
+
+plt.figure(figsize=(6, 5))
+sns.scatterplot(x='satisfaction_level', y='last_evaluation', hue='cluster', data=df_left, palette='viridis', s=100)
+plt.title('K-means Clustering of Employees Who Left')
+plt.xlabel('Satisfaction Level')
+plt.ylabel('Last Evaluation')
+plt.legend(title='Cluster')
+plt.show()
+
+df = pd.get_dummies(df, columns=['sales', 'salary'], drop_first=True)
+df.info()
+
+X = df.drop('left',axis=1)
+y = df['left']
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=123, stratify=y)
+
+
+sm = SMOTE(random_state=123)
+X_train_res, y_train_res = sm.fit_resample(X_train,y_train)
+
+
+models = {
+    'Logistic Regression': LogisticRegression(),
+    'Random Forest': RandomForestClassifier(),
+    'Gradient Boosting': GradientBoostingClassifier()
+}
+
+# Train the models and make predictions
+predictions = {}
+probs = {}
+
+for model_name, model in models.items():
+    model.fit(X_train, y_train)
+    predictions[model_name] = model.predict(X_test)
+    probs[model_name] = model.predict_proba(X_test)[:, 1]
+
+
+plt.figure(figsize=(5, 4))
+
+for model_name in models:
+    fpr, tpr, _ = roc_curve(y_test, probs[model_name])
+    auc = roc_auc_score(y_test, probs[model_name])
+    plt.plot(fpr, tpr, label=f'{model_name} (AUC = {auc:.2f})')
+
+plt.plot([0, 1], [0, 1], 'k--')
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('ROC Curve')
+plt.legend()
+plt.show()
+
+# Confusion matrices
+for model_name in models:
+    cm = confusion_matrix(y_test, predictions[model_name])
+    plt.figure(figsize=(5, 4))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=['Stayed', 'Left'], yticklabels=['Stayed', 'Left'])
+    plt.title(f'Confusion Matrix for {model_name}')
+    plt.xlabel('Predicted')
+    plt.ylabel('Actual')
+    plt.show()
+
+# Print classification reports and evaluate models
+for model_name in models:
+    print(f'Classification Report for {model_name}:\n')
+    print(classification_report(y_test, predictions[model_name]))
+    roc_auc = roc_auc_score(y_test, probs[model_name])
+    print(f'ROC AUC for {model_name}: {roc_auc:.2f}\n')
+
+# Print classification reports and evaluate models
+for model_name in models:
+    print(f'Classification Report for {model_name}:\n')
+    print(classification_report(y_test, predictions[model_name]))
+    roc_auc = roc_auc_score(y_test, probs[model_name])
+    print(f'ROC AUC for {model_name}: {roc_auc:.2f}\n')
+
+best_model = models['Random Forest']  # Assuming Random Forest is the best model
+y_test_prob = best_model.predict_proba(X_test)[:, 1]
+
+df_test = X_test.copy()
+df_test['left_prob'] = y_test_prob
+
+def retention_strategy(prob):
+    if prob < 0.20:
+        return 'Safe Zone (Green)'
+    elif prob < 0.60:
+        return 'Low-Risk Zone (Yellow)'
+    elif prob < 0.90:
+        return 'Medium-Risk Zone (Orange)'
+    else:
+        return 'High-Risk Zone (Red)'
+
+df_test['retention_zone'] = df_test['left_prob'].apply(retention_strategy)
+
+# Count occurrences of each retention zone
+zone_counts = df_test['retention_zone'].value_counts()
+
+
+# Plotting
+plt.figure(figsize=(5, 4))
+zone_counts.plot(kind='bar', color=['green', 'red', 'orange', 'yellow'])
+plt.title('Retention Strategy Distribution')
+plt.xlabel('Retention Zones')
+plt.ylabel('Count')
+plt.xticks(rotation=45)
+plt.tight_layout()
